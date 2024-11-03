@@ -6,6 +6,5 @@ It seems to be an issue of multiple /rviz nodes being present and therefore mayb
 ``
 [flatland_server-1] [WARN] [1730593307.672788791] [DebugVis]: Deleting topic models/m_robot_1
 [flatland_server-1] [WARN] [1730593307.673027084] [DebugVis]: Deleting topic models/m_robot_2
-```
-
+``
 Maybe you guys can figure somethin out, but I am done for today.
