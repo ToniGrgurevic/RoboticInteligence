@@ -4,7 +4,7 @@ bodies:  # List of named bodies
   - name: base_link
     pose: [0, 0, 0] 
     type: dynamic  
-    color: [1, 1, 1, 0.75] 
+    color: [1, 0, 0, 0.75] 
     footprints:
       - type: polygon  # wheel
         sensor: true

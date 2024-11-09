@@ -1,5 +1,5 @@
 image: tilde.png
-resolution: 0.10
+resolution: 0.075
 origin: [-28, -14, 0.0]
 negate: 0
 occupied_thresh: 0.65

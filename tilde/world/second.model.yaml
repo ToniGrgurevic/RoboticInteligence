@@ -4,7 +4,7 @@ bodies:  # List of named bodies
   - name: base_link
     pose: [0, 0, 0] 
     type: dynamic  
-    color: [1, 1, 1, 0.75] 
+    color: [1, 0, 0, 0.75] 
     footprints:
       - type: polygon  # wheel
         sensor: true
@@ -36,7 +36,7 @@ bodies:  # List of named bodies
   - name: shell
     pose: [0,0,0]
     type: dynamic
-    color: [0, 0, 1, 1.0]
+    color: [0, 1, 0, 1.0]
     footprints:
       - type: circle
         radius: 0.2552
