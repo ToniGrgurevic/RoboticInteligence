@@ -337,43 +337,39 @@ class SerpController(Node):
         request.name = "SerpController"
         request.pose = Pose2D(uniform(-6, 6), uniform(-5, 7), uniform(0, 359))
         client.call(request)
-        
+
 class SerpController2(Node):
     doStop = False
     doOdometry = False
 
     maxLinVel = 2.2
     maxAngVel = 1.8
-    linAcc = 1.5
+    linAcc = 1.2
     linDec = 3.0
     angAcc = 4.0
     angDec = 4.0
 
     minDistFromWall = 1.0
     k = 3
-
+    follow_distance_threshold = 1.5  # Distance threshold for detecting the other robot
+    wall_follow_threshold = 3.0      # Distance threshold to fallback to wall following
+    
     def __init__(self) -> None:
         super().__init__("SerpController2")
-
-        # self.doOdometry = self.get_parameter("~do-odometry")
-        # self.doStop = self.get_parameter("~do-stop")
-        # self.maxLinVel = self.get_parameter("~max-linVel")
-        # self.maxAngVel = self.get_parameter("~max-angVel")
-        # self.linAcc = self.get_parameter("~linAcc")
-        # self.linDec = self.get_parameter("~linDec")
-        # self.angAcc = self.get_parameter("~angAcc")
-        # self.angDec = self.get_parameter("~angDec")
-
+        self.robot_detected = False  # Initialize as instance variable
+        
         self.vel = Twist()
+        self.pub: Publisher = self.create_publisher(Twist, "/robot2/cmd_vel", 1)
 
-        self.pub:Publisher = self.create_publisher(Twist, "/robot2/cmd_vel", 1)
         if SerpController2.doOdometry:
             print('"seq","sec","x","y"')
             self.create_subscription(
                 Odometry, "/robot2/odometry/ground_truth", self._odometryGroundTruth, 1
             )
-            
+
+        # Laser scan subscriptions
         self.create_subscription(LaserScan, "/robot2/static_laser", self._scanCallback, 1)
+        self.create_subscription(LaserScan, "/robot2/robot_scan", self._robotScanCallback, 1)
 
     def _odometryGroundTruth(self, odometry):
         print(
@@ -381,6 +377,21 @@ class SerpController2(Node):
         )
 
     def _scanCallback(self, scan):
+        # Wall-following only if robot is not detected
+        if not self.robot_detected:
+            self.get_logger().info("Executing wall-following behavior")
+            lasers = [0] * len(scan.ranges)
+            angle = scan.angle_min
+            for i in range(len(scan.ranges)):
+                dist = scan.ranges[i]
+                lasers[i] = (angle, dist if not isnan(dist) else inf)
+                angle += scan.angle_increment
+
+            dirs = self._processLasers(lasers, scan.angle_increment)
+            self.reactToScan(dirs)
+
+    def _robotScanCallback(self, scan):
+        # Process the scan to detect a robot on the "robots" layer
         lasers = [0] * len(scan.ranges)
         angle = scan.angle_min
         for i in range(len(scan.ranges)):
@@ -389,9 +400,31 @@ class SerpController2(Node):
             angle += scan.angle_increment
 
         dirs = self._processLasers(lasers, scan.angle_increment)
-        self.reactToScan(dirs)
+        if dirs["front"]["dist"] < SerpController2.follow_distance_threshold:
+            # Switch to robot-following mode if detected
+            self.robot_detected = True
+            self.get_logger().info("Robot detected, switching to following mode")
+            self.follow_robot(dirs["front"]["dist"], dirs["front"]["ang"])
+        elif self.robot_detected:
+            # Continue following the detected robot
+            self.follow_robot(dirs["front"]["dist"], dirs["front"]["ang"])
+            if dirs["front"]["dist"] > SerpController2.wall_follow_threshold:
+                # Switch to wall-following mode if robot gets too far away
+                self.robot_detected = False
+                self.get_logger().info("Leader lost, switching to wall mode")
+                self.maxLinVel = 1.1
+                self.linAcc = 0.2
+                self.follow_distance_threshold = 2.5
+                
+    def follow_robot(self, distance, angle):
+        # Set velocity to follow the detected robot
+        self.linVel = min(self.maxLinVel, distance * 0.5)
+        self.angVel = angle * 0.5
+        self.get_logger().info(f"Following robot:")
+        self.moveTurtle()
 
     def _processLasers(self, lasers, angleIncrement):
+        # Existing laser processing logic remains unchanged
         angleMin = lasers[0][0]
 
         dirs = {
@@ -445,11 +478,11 @@ class SerpController2(Node):
                 dirs["edges"]["back_right"] = dist
 
             if dist < dirs[key]["dist"]:
-                # update sector
+                # Update sector
                 dirs[key]["dist"] = dist
                 dirs[key]["ang"] = angle
                 if dist < minDist:
-                    # update global info
+                    # Update global info
                     dirs["minDir"] = key
                     minDist = dist
 
@@ -488,6 +521,10 @@ class SerpController2(Node):
             return inf
 
     def reactToScan(self, dirs):
+        # Wall-following logic remains active only if robot_detected is False
+        if self.robot_detected:
+            return  # Skip wall-following logic when in following mode
+
         minDir = dirs["minDir"]
         minDist = dirs[minDir]["dist"]
         minAng = dirs[minDir]["ang"]
@@ -498,19 +535,13 @@ class SerpController2(Node):
             return
 
         if SerpController2.doStop and abs(minDist - SerpController2.minDistFromWall) < 0.1 * SerpController2.k:
-            if (
-                dirs["edges"]["back_left"] == inf
-                and STOP_MIN < dirs["edges"]["left"] < STOP_MAX
-            ):
+            if dirs["edges"]["back_left"] == inf and STOP_MIN < dirs["edges"]["left"] < STOP_MAX:
                 self.get_logger().info(f"End left:  {dirs['edges']['left']}")
                 self.linVel = 0
                 self.angVel = 0
                 self.moveTurtle()
                 return
-            elif (
-                dirs["edges"]["back_right"] == inf
-                and STOP_MIN < dirs["edges"]["right"] < STOP_MAX
-            ):
+            elif dirs["edges"]["back_right"] == inf and STOP_MIN < dirs["edges"]["right"] < STOP_MAX:
                 self.get_logger().info(f"End right: {dirs['edges']['right']}")
                 self.linVel = 0
                 self.angVel = 0
@@ -522,36 +553,16 @@ class SerpController2(Node):
         elif minDir.endswith("left"):
             front = min(dirs["front"]["dist"], dirs["front_right"]["dist"])
         else:
-            front = min(
-                dirs["front"]["dist"],
-                dirs["front_right"]["dist"],
-                dirs["front_left"]["dist"],
-            )
+            front = min(dirs["front"]["dist"], dirs["front_right"]["dist"], dirs["front_left"]["dist"])
+
         self.linVel = SerpController2.maxLinVel * front / LASER_RANGE
 
-        if minDir == "front":
-            if dirs["left"]["dist"] == inf and dirs["right"]["dist"] != inf:
-                # was following wall on right and found obstacle in front => circle obstacle
-                wallSide = "right"
-            elif dirs["left"]["dist"] != inf and dirs["right"]["dist"] == inf:
-                # was following wall on left and found obstacle in front => circle obstacle
-                wallSide = "left"
-            else:
-                # found obstacle in front, which way to turn? The closest
-                minLeft = min(dirs["front_left"]["dist"], dirs["left"]["dist"])
-                minRight = min(dirs["front_right"]["dist"], dirs["right"]["dist"])
-                wallSide = "left" if minLeft < minRight else "right"
-        elif minDir.endswith("left"):
-            # keep following left
-            wallSide = "left"
-        else:
-            # keep following right
-            wallSide = "right"
-
-        if wallSide == "left":
-            angDistTerm = cos(minAng) + (SerpController2.minDistFromWall - minDist)
-        else:
-            angDistTerm = cos(pi - minAng) + (minDist - SerpController2.minDistFromWall)
+        wallSide = "left" if minDir.endswith("left") else "right"
+        angDistTerm = (
+            cos(minAng) + (SerpController2.minDistFromWall - minDist)
+            if wallSide == "left"
+            else cos(pi - minAng) + (minDist - SerpController2.minDistFromWall)
+        )
         self.angVel = -SerpController2.k * self.linVel * angDistTerm
 
         self.moveTurtle()
@@ -602,6 +613,7 @@ class SerpController2(Node):
                 # exceeded max decelaration
                 self.vel.angular.z = self.angVel - SerpController2.angDec / LASER_FREQ
 
+
     def wiggle(self):
         #  rospy.loginfo("wiggling")
         self.linVel = self.maxLinVel
@@ -613,10 +625,13 @@ class SerpController2(Node):
         # reset wandering angle when limit reached
         if abs(self.angVel) >= SerpController2.maxAngVel:
             self.angVel = 0
-
+        self.get_logger().info(f"Wiggling: linVel={self.linVel}, angVel={self.angVel}")
+      
         self.moveTurtle()
 
     def moveTurtle(self):
+        # Publish current velocity
+        self.get_logger().info(f"Moving: linear={self.vel.linear.x}, angular={self.vel.angular.z}")
         self.pub.publish(self.vel)
 
     def reset(self):
@@ -631,7 +646,7 @@ class SerpController2(Node):
         request.name = "SerpController2"
         request.pose = Pose2D(uniform(-6, 6), uniform(-5, 7), uniform(0, 359))
         client.call(request)
- 
+        
 def main(args = None):
     # rclpy.init()
     

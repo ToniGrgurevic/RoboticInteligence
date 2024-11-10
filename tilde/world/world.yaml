@@ -3,6 +3,8 @@ layers:
   - name: ["static", "no_laser"]
     map: "layer.yaml"
     color: [1.0, 1.0, 1.0, 1]
+  - name: ["robots"]              # New layer for robots
+    color: [0.0, 0.0, 1.0, 1]     # Optional color representation for this layer
 models:
   - name: serp
     model: "serp.model.yaml"

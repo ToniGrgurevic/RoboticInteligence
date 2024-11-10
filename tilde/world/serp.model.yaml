@@ -40,6 +40,7 @@ bodies:  # List of named bodies
     footprints:
       - type: circle
         radius: 0.2552
+        layers: ["robots"]
         center: [0, 0]
         density: 1
 

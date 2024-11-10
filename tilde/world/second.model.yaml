@@ -75,11 +75,11 @@ plugins:
     name: tf_publisher
     publish_tf_world: false
 
-  # simulates a lidar by having 90 lasers evenly spread around the model
+# Modify existing Laser plugin for wall detection on "static" layer
   - type: Laser
     name: static_laser
     frame: robot2/static_laser_link # Add namespace
-    topic: robot2/static_laser      # Add namespace
+    topic: robot2/static_laser         # Topic for wall detection
     body: base_link
     broadcast_tf: true
     origin: [0.0, 0.0, 0.0]
@@ -87,4 +87,32 @@ plugins:
     angle: {min: -3.14159265359, max: 3.14159265359, increment: 0.06981317007}
     noise_std_dev: 0.015
     update_rate: 10
-    layers: ["static"]
+    layers: ["static"]              # Scans only the static layer for walls
+
+  # New Laser plugin for robot detection on the "robots" layer
+  - type: Laser
+    name: robot_laser
+    frame: robot2/robot_laser_link  # Different frame for robot scanning
+    topic: robot2/robot_scan        # Separate topic for detecting other robots
+    body: base_link
+    broadcast_tf: true
+    origin: [0.0, 0.0, 0.0]
+    range: 10
+    angle: {min: -3.14159265359, max: 3.14159265359, increment: 0.06981317007}
+    noise_std_dev: 0.015
+    update_rate: 10
+    layers: ["robots"]              # Scans only the robots layer
+
+  # # simulates a lidar by having 90 lasers evenly spread around the model
+  # - type: Laser
+  #   name: static_laser
+  #   frame: robot2/static_laser_link # Add namespace
+  #   topic: robot2/static_laser      # Add namespace
+  #   body: base_link
+  #   broadcast_tf: true
+  #   origin: [0.0, 0.0, 0.0]
+  #   range: 10
+  #   angle: {min: -3.14159265359, max: 3.14159265359, increment: 0.06981317007}
+  #   noise_std_dev: 0.015
+  #   update_rate: 10
+  #   layers: ["static"]
