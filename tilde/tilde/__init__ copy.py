@@ -86,7 +86,29 @@ class SerpController(Node):
             f"{odometry.header.seq},{odometry.header.stamp.secs + odometry.header.stamp.nsecs / 1000000000},{odometry.pose.pose.position.x},{odometry.pose.pose.position.y}"
         )
 
+    """
     def _scanCallback(self, scan):
+        lasers = [0] * len(scan.ranges)
+        angle = scan.angle_min
+        for i in range(len(scan.ranges)):
+            dist = scan.ranges[i]
+            lasers[i] = (angle, dist if not isnan(dist) else inf)
+            angle += scan.angle_increment
+
+        dirs = self._processLasers(lasers, scan.angle_increment)
+        self.reactToScan(dirs)
+    """
+    def _scanCallback(self, scan):
+        # Add safety check for nearby robots
+        min_distance = min([r for r in scan.ranges if not isnan(r)], default=inf)
+        if min_distance < 0.5:  # Add safety distance threshold
+            # If something is too close, slow down and turn
+            self.linVel = self.maxLinVel * 0.3
+            self.angVel = self.maxAngVel * 0.5
+            self.moveTurtle()
+            return
+
+        # Rest of the original _scanCallback code...
         lasers = [0] * len(scan.ranges)
         angle = scan.angle_min
         for i in range(len(scan.ranges)):
@@ -349,18 +371,20 @@ class SerpController2(Node):
     angAcc = 4.0
     angDec = 4.0
 
+    follow_distance_threshold = 2.0  # Increased from 1.5
+    safe_following_distance = 1.0    # New parameter
+    wall_follow_threshold = 3.0
+
+
     minDistFromWall = 1.0
     k = 3
-    follow_distance_threshold = 1.5  # Distance threshold for detecting the other robot
-    wall_follow_threshold = 3.0      # Distance threshold to fallback to wall following
+    #follow_distance_threshold = 1.5  # Distance threshold for detecting the other robot
+    #wall_follow_threshold = 3.0      # Distance threshold to fallback to wall following
     
-    # Add new safety parameters
-    min_safe_distance = 0.8  # Minimum safe distance to maintain from leader
-    optimal_follow_distance = 1.2 
-
     def __init__(self) -> None:
         super().__init__("SerpController2")
-        self.robot_detected = False
+        self.robot_detected = False  # Initialize as instance variable
+        
         self.vel = Twist()
         self.pub: Publisher = self.create_publisher(Twist, "/robot2/cmd_vel", 1)
 
@@ -370,6 +394,7 @@ class SerpController2(Node):
                 Odometry, "/robot2/odometry/ground_truth", self._odometryGroundTruth, 1
             )
 
+        # Laser scan subscriptions
         self.create_subscription(LaserScan, "/robot2/static_laser", self._scanCallback, 1)
         self.create_subscription(LaserScan, "/robot2/robot_scan", self._robotScanCallback, 1)
 
@@ -391,8 +416,79 @@ class SerpController2(Node):
 
             dirs = self._processLasers(lasers, scan.angle_increment)
             self.reactToScan(dirs)
+"""
+    def _robotScanCallback(self, scan):
+        # Process the scan to detect a robot on the "robots" layer
+        lasers = [0] * len(scan.ranges)
+        angle = scan.angle_min
+        for i in range(len(scan.ranges)):
+            dist = scan.ranges[i]
+            lasers[i] = (angle, dist if not isnan(dist) else inf)
+            angle += scan.angle_increment
 
+        dirs = self._processLasers(lasers, scan.angle_increment)
+        if dirs["front"]["dist"] < SerpController2.follow_distance_threshold:
+            # Switch to robot-following mode if detected
+            self.robot_detected = True
+            self.get_logger().info("Robot detected, switching to following mode")
+            self.follow_robot(dirs["front"]["dist"], dirs["front"]["ang"])
+        elif self.robot_detected:
+            # Continue following the detected robot
+            self.follow_robot(dirs["front"]["dist"], dirs["front"]["ang"])
+            if dirs["front"]["dist"] > SerpController2.wall_follow_threshold:
+                # Switch to wall-following mode if robot gets too far away
+                self.robot_detected = False
+                self.get_logger().info("Leader lost, switching to wall mode")
+                self.maxLinVel = 1.1
+                self.linAcc = 0.2
+                self.follow_distance_threshold = 2.5
+                
+    def follow_robot(self, distance, angle):
+        # Set velocity to follow the detected robot
+        self.linVel = min(self.maxLinVel, distance * 0.5)
+        self.angVel = angle * 0.5
+        self.get_logger().info(f"Following robot:")
+        self.moveTurtle()
+"""
+  def follow_robot(self, distance, angle):
+        # Modify the following behavior to maintain safer distance
+        target_distance = self.safe_following_distance
+        distance_error = distance - target_distance
+        
+        # Adjust speed based on distance
+        speed_factor = min(1.0, max(0.1, distance_error / target_distance))
+        
+        # If too close, slow down significantly
+        if distance < self.safe_following_distance:
+            self.linVel = self.maxLinVel * 0.3
+        else:
+            self.linVel = self.maxLinVel * speed_factor
 
+        # Smoother turning
+        self.angVel = angle * 0.8  # Reduced from 0.5 for smoother following
+        
+        self.get_logger().info(f"Following robot: distance={distance:.2f}, speed={self.linVel:.2f}")
+        self.moveTurtle()
+
+    def _robotScanCallback  def follow_robot(self, distance, angle):
+        # Modify the following behavior to maintain safer distance
+        target_distance = self.safe_following_distance
+        distance_error = distance - target_distance
+        
+        # Adjust speed based on distance
+        speed_factor = min(1.0, max(0.1, distance_error / target_distance))
+        
+        # If too close, slow down significantly
+        if distance < self.safe_following_distance:
+            self.linVel = self.maxLinVel * 0.3
+        else:
+            self.linVel = self.maxLinVel * speed_factor
+
+        # Smoother turning
+        self.angVel = angle * 0.8  # Reduced from 0.5 for smoother following
+        
+        self.get_logger().info(f"Following robot: distance={distance:.2f}, speed={self.linVel:.2f}")
+        self.moveTurtle()
 
     def _robotScanCallback(self, scan):
         lasers = [0] * len(scan.ranges)
@@ -404,50 +500,39 @@ class SerpController2(Node):
 
         dirs = self._processLasers(lasers, scan.angle_increment)
         
-        # Check if robot is detected in front
-        if dirs["front"]["dist"] < self.wall_follow_threshold:
-            if not self.robot_detected and dirs["front"]["dist"] < self.follow_distance_threshold:
-                self.robot_detected = True
-                self.get_logger().info("Robot detected, switching to following mode")
-            
-            if self.robot_detected:
-                # Use enhanced following with safety distance
-                self.follow_robot(dirs["front"]["dist"], dirs["front"]["ang"])
-        else:
-            if self.robot_detected:
+        # Add hysteresis to prevent frequent mode switching
+        if not self.robot_detected and dirs["front"]["dist"] < self.follow_distance_threshold:
+            self.robot_detected = True
+            self.get_logger().info("Robot detected, switching to following mode")
+            self.follow_robot(dirs["front"]["dist"], dirs["front"]["ang"])
+        elif self.robot_detected:
+            if dirs["front"]["dist"] > self.wall_follow_threshold:
+                # Add delay before switching back to wall following
                 self.robot_detected = False
                 self.get_logger().info("Leader lost, switching to wall mode")
-                # Reset to wall-following parameters
-                self.maxLinVel = 1.1
-                self.linAcc = 0.2
-                self.follow_distance_threshold = 2.5
-                
+            else:
+                self.follow_robot(dirs["front"]["dist"], dirs["front"]["ang"])(self, scan):
+        lasers = [0] * len(scan.ranges)
+        angle = scan.angle_min
+        for i in range(len(scan.ranges)):
+            dist = scan.ranges[i]
+            lasers[i] = (angle, dist if not isnan(dist) else inf)
+            angle += scan.angle_increment
 
-    def follow_robot(self, distance, angle):
-        # Implement dynamic speed control based on distance
-        if distance < self.min_safe_distance:
-            # Too close - stop completely
-            self.linVel = 0
-            self.angVel = angle * 0.5
-            self.get_logger().warn(f"Too close to leader! Stopping. Distance: {distance}")
+        dirs = self._processLasers(lasers, scan.angle_increment)
         
-        elif distance < self.optimal_follow_distance:
-            # Close to optimal distance - move very slowly
-            speed_factor = (distance - self.min_safe_distance) / (self.optimal_follow_distance - self.min_safe_distance)
-            self.linVel = min(self.maxLinVel * 0.3, speed_factor * 0.5)
-            self.angVel = angle * 0.5
-            self.get_logger().info(f"Maintaining safe distance. Speed: {self.linVel}")
-        
-        else:
-            # Normal following behavior with smooth speed transition
-            distance_error = distance - self.optimal_follow_distance
-            speed_factor = min(1.0, distance_error / 2.0)  # Gradually increase speed
-            self.linVel = min(self.maxLinVel, speed_factor * self.maxLinVel)
-            self.angVel = angle * 0.5
-            self.get_logger().info(f"Following leader. Distance: {distance}, Speed: {self.linVel}")
-
-        self.moveTurtle()
-
+        # Add hysteresis to prevent frequent mode switching
+        if not self.robot_detected and dirs["front"]["dist"] < self.follow_distance_threshold:
+            self.robot_detected = True
+            self.get_logger().info("Robot detected, switching to following mode")
+            self.follow_robot(dirs["front"]["dist"], dirs["front"]["ang"])
+        elif self.robot_detected:
+            if dirs["front"]["dist"] > self.wall_follow_threshold:
+                # Add delay before switching back to wall following
+                self.robot_detected = False
+                self.get_logger().info("Leader lost, switching to wall mode")
+            else:
+                self.follow_robot(dirs["front"]["dist"], dirs["front"]["ang"])
 
     def _processLasers(self, lasers, angleIncrement):
         # Existing laser processing logic remains unchanged
@@ -672,7 +757,8 @@ class SerpController2(Node):
         request.name = "SerpController2"
         request.pose = Pose2D(uniform(-6, 6), uniform(-5, 7), uniform(0, 359))
         client.call(request)
-        
+    
+
 def main(args = None):
     # rclpy.init()
     
@@ -685,7 +771,10 @@ def main(args = None):
     rclpy.init(args=args)
     
     serp = SerpController()
-    serp2 = SerpController2()
+    #serp2 = SerpController2()
+    serp = ImprovedSerpController2()
+#    serp = SerpControllerSlow()
+
 
     # Use a MultiThreadedExecutor to manage multiple nodes
     executor = MultiThreadedExecutor()
