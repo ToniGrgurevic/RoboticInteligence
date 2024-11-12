@@ -32,6 +32,117 @@ RAD135 = radians(135)
 RAD157_5 = radians(157.5)
 
 
+# Experiment configurations
+EXPERIMENTS = [
+    {
+        "name": "baseline",
+        "robot1": {
+            "maxLinVel": 1.05,
+            "maxAngVel": 2.5,
+            "linAcc": 1.5,
+            "linDec": 3.0,
+            "angAcc": 4.0,
+            "angDec": 4.0,
+        },
+        "robot2": {
+            "maxLinVel": 2.2,
+            "maxAngVel": 1.8,
+            "linAcc": 1.2,
+            "linDec": 3.0,
+            "angAcc": 4.0,
+            "angDec": 4.0,
+        },
+        "laser_freq": 10,
+    },
+    {
+        "name": "fast_pursuit",
+        "robot1": {
+            "maxLinVel": 1.05,
+            "maxAngVel": 2.5,
+            "linAcc": 1.5,
+            "linDec": 3.0,
+            "angAcc": 4.0,
+            "angDec": 4.0,
+        },
+        "robot2": {
+            "maxLinVel": 2.8,  # Increased speed
+            "maxAngVel": 2.2,  # Increased angular velocity
+            "linAcc": 1.8,    # Increased acceleration
+            "linDec": 3.5,
+            "angAcc": 4.5,
+            "angDec": 4.5,
+        },
+        "laser_freq": 15,  # Higher sensor rate
+    },
+    {
+        "name": "cautious_pursuit",
+        "robot1": {
+            "maxLinVel": 0.9,  # Slower leader
+            "maxAngVel": 2.0,
+            "linAcc": 1.2,
+            "linDec": 2.5,
+            "angAcc": 3.5,
+            "angDec": 3.5,
+        },
+        "robot2": {
+            "maxLinVel": 1.8,  # Moderate follower speed
+            "maxAngVel": 1.5,
+            "linAcc": 1.0,
+            "linDec": 2.5,
+            "angAcc": 3.5,
+            "angDec": 3.5,
+        },
+        "laser_freq": 20,  # Higher precision
+    },
+    {
+        "name": "aggressive_pursuit",
+        "robot1": {
+            "maxLinVel": 1.2,  # Faster leader
+            "maxAngVel": 3.0,
+            "linAcc": 2.0,
+            "linDec": 3.5,
+            "angAcc": 4.5,
+            "angDec": 4.5,
+        },
+        "robot2": {
+            "maxLinVel": 3.0,  # Very fast follower
+            "maxAngVel": 2.5,
+            "linAcc": 2.2,
+            "linDec": 4.0,
+            "angAcc": 5.0,
+            "angDec": 5.0,
+        },
+        "laser_freq": 25,  # Highest sensor rate
+    },
+]
+
+
+class PathRecorder:
+    def __init__(self, experiment_name, robot_name):
+        self.experiment_name = experiment_name
+        self.robot_name = robot_name
+        self.path_data = []
+        
+        # Create directory for experiment data
+        self.data_dir = f"experiment_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        os.makedirs(self.data_dir, exist_ok=True)
+        
+    def record_position(self, seq, timestamp, x, y):
+        self.path_data.append({
+            'seq': seq,
+            'timestamp': timestamp,
+            'x': x,
+            'y': y
+        })
+        
+    def save_path(self):
+        filename = f"{self.data_dir}/{self.experiment_name}_{self.robot_name}_path.csv"
+        with open(filename, 'w', newline='') as f:
+            writer = csv.DictWriter(f, fieldnames=['seq', 'timestamp', 'x', 'y'])
+            writer.writeheader()
+            writer.writerows(self.path_data)
+
+
 def clamp(val, minVal, maxVal):
     return float(max(min(val, maxVal), minVal))
 
@@ -46,7 +157,7 @@ def laserToPoint(laser):
 
 class SerpController(Node):
     doStop = False
-    doOdometry = False
+    doOdometry = True
 
     maxLinVel = 1.05
     maxAngVel = 2.5
@@ -70,6 +181,18 @@ class SerpController(Node):
         # self.angAcc = self.get_parameter("~angAcc")
         # self.angDec = self.get_parameter("~angDec")
 
+        self.maxLinVel = experiment_config["robot1"]["maxLinVel"]
+        self.maxAngVel = experiment_config["robot1"]["maxAngVel"]
+        self.linAcc = experiment_config["robot1"]["linAcc"]
+        self.linDec = experiment_config["robot1"]["linDec"]
+        self.angAcc = experiment_config["robot1"]["angAcc"]
+        self.angDec = experiment_config["robot1"]["angDec"]
+
+
+        # Initialize path recorder
+        self.path_recorder = PathRecorder(experiment_config["name"], "robot1")
+
+
         self.vel = Twist()
 
         self.pub:Publisher = self.create_publisher(Twist, "/cmd_vel", 1)
@@ -82,8 +205,13 @@ class SerpController(Node):
         self.create_subscription(LaserScan, "/static_laser", self._scanCallback, 1)
 
     def _odometryGroundTruth(self, odometry):
-        print(
-            f"{odometry.header.seq},{odometry.header.stamp.secs + odometry.header.stamp.nsecs / 1000000000},{odometry.pose.pose.position.x},{odometry.pose.pose.position.y}"
+        print('"seq","sec","x","y"')
+        timestamp = odometry.header.stamp.sec + odometry.header.stamp.nanosec / 1e9
+        self.path_recorder.record_position(
+            odometry.header.seq,
+            timestamp,
+            odometry.pose.pose.position.x,
+            odometry.pose.pose.position.y
         )
 
     """
@@ -362,7 +490,7 @@ class SerpController(Node):
 
 class SerpController2(Node):
     doStop = False
-    doOdometry = False
+    doOdometry = True
 
     maxLinVel = 2.2
     maxAngVel = 1.8
@@ -383,6 +511,21 @@ class SerpController2(Node):
     
     def __init__(self) -> None:
         super().__init__("SerpController2")
+
+                # Apply experiment configuration
+        self.maxLinVel = experiment_config["robot2"]["maxLinVel"]
+        self.maxAngVel = experiment_config["robot2"]["maxAngVel"]
+        self.linAcc = experiment_config["robot2"]["linAcc"]
+        self.linDec = experiment_config["robot2"]["linDec"]
+        self.angAcc = experiment_config["robot2"]["angAcc"]
+        self.angDec = experiment_config["robot2"]["angDec"]
+
+
+        
+        # Initialize path recorder
+        self.path_recorder = PathRecorder(experiment_config["name"], "robot2")
+
+
         self.robot_detected = False  # Initialize as instance variable
         
         self.vel = Twist()
@@ -399,8 +542,12 @@ class SerpController2(Node):
         self.create_subscription(LaserScan, "/robot2/robot_scan", self._robotScanCallback, 1)
 
     def _odometryGroundTruth(self, odometry):
-        print(
-            f"{odometry.header.seq},{odometry.header.stamp.secs + odometry.header.stamp.nsecs / 1000000000},{odometry.pose.pose.position.x},{odometry.pose.pose.position.y}"
+        timestamp = odometry.header.stamp.sec + odometry.header.stamp.nanosec / 1e9
+        self.path_recorder.record_position(
+            odometry.header.seq,
+            timestamp,
+            odometry.pose.pose.position.x,
+            odometry.pose.pose.position.y
         )
 
     def _scanCallback(self, scan):
@@ -470,6 +617,7 @@ class SerpController2(Node):
         self.get_logger().info(f"Following robot: distance={distance:.2f}, speed={self.linVel:.2f}")
         self.moveTurtle()
 
+"""
     def _robotScanCallback  def follow_robot(self, distance, angle):
         # Modify the following behavior to maintain safer distance
         target_distance = self.safe_following_distance
@@ -489,7 +637,7 @@ class SerpController2(Node):
         
         self.get_logger().info(f"Following robot: distance={distance:.2f}, speed={self.linVel:.2f}")
         self.moveTurtle()
-
+"""
     def _robotScanCallback(self, scan):
         lasers = [0] * len(scan.ranges)
         angle = scan.angle_min
@@ -521,18 +669,6 @@ class SerpController2(Node):
 
         dirs = self._processLasers(lasers, scan.angle_increment)
         
-        # Add hysteresis to prevent frequent mode switching
-        if not self.robot_detected and dirs["front"]["dist"] < self.follow_distance_threshold:
-            self.robot_detected = True
-            self.get_logger().info("Robot detected, switching to following mode")
-            self.follow_robot(dirs["front"]["dist"], dirs["front"]["ang"])
-        elif self.robot_detected:
-            if dirs["front"]["dist"] > self.wall_follow_threshold:
-                # Add delay before switching back to wall following
-                self.robot_detected = False
-                self.get_logger().info("Leader lost, switching to wall mode")
-            else:
-                self.follow_robot(dirs["front"]["dist"], dirs["front"]["ang"])
 
     def _processLasers(self, lasers, angleIncrement):
         # Existing laser processing logic remains unchanged

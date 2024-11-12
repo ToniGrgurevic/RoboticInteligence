@@ -4,6 +4,9 @@ from rclpy.executors import MultiThreadedExecutor
 from math import radians, inf, isnan, pi, cos, sin, sqrt
 import random
 from random import random, uniform
+import csv
+from datetime import datetime
+import os
 
 import rclpy
 from rclpy.publisher import Publisher
@@ -14,6 +17,7 @@ from std_msgs.msg import String
 from nav_msgs.msg import Odometry
 from flatland_msgs.srv import MoveModel
 from flatland_msgs.msg import Collisions
+import time
 
 LASER_RANGE = 3
 LASER_FREQ = 10
@@ -31,6 +35,163 @@ RAD112_5 = radians(112.5)
 RAD135 = radians(135)
 RAD157_5 = radians(157.5)
 
+# Experiment configurations
+EXPERIMENTS = [
+    {
+        "name": "baseline",
+        "robot1": {
+            "maxLinVel": 1.1,  #0.5
+            "maxAngVel": 3.0, #same
+            "linAcc": 1.2,
+            "linDec": 3.0,   #same
+            "angAcc": 3.0,   #same
+            "angDec": 3.0,  #same
+        },
+        "robot2": {
+            "maxLinVel": 2.2,  
+            "maxAngVel": 3.0,  #
+            "linAcc": 1.5,
+            "linDec": 3.0,
+            "angAcc": 3.0,
+            "angDec": 3.0, #
+        },
+        "laser_freq": 10,
+    },
+    {
+        "name": "faster in corners",
+        "robot1": {
+            "maxLinVel": 1.1,  #0.5
+            "maxAngVel": 3.0, #same
+            "linAcc": 1.2,
+            "linDec": 3.0,   #same
+            "angAcc": 6.0,   #same ,bosted 2x
+            "angDec": 6.0,  #same ,bosted 2x
+        },
+        "robot2": {
+            "maxLinVel": 2.2,  
+            "maxAngVel": 3.0,  
+            "linAcc": 1.5,
+            "linDec": 3.0,
+            "angAcc": 6.0,
+            "angDec": 6.0, 
+        },
+        "laser_freq": 10,
+    },
+    {
+        "name": "faster in corners and in general",
+        "robot1": {
+            "maxLinVel": 1.1,  #0.5,
+            "maxAngVel": 3.0, #same
+            "linAcc": 1.5,  #bosted
+            "linDec": 3.0,   #same
+            "angAcc": 6.0,   #same ,bosted 2x
+            "angDec": 6.0,  #same ,bosted 2x
+        },
+        "robot2": {
+            "maxLinVel": 2.2,  
+            "maxAngVel": 3.0,  
+            "linAcc": 3.0,
+            "linDec": 3.0,
+            "angAcc": 6.0,
+            "angDec": 6.0, 
+        },
+        "laser_freq": 10,
+    },
+    {
+        "name": "aggressive_pursuit",
+        "robot1": {
+            "maxLinVel": 1.1,  #0.5,
+            "maxAngVel": 3.0, #same
+            "linAcc": 1.5,  #bosted
+            "linDec": 3.0,   #same
+            "angAcc": 12.0, #bosted 4x
+            "angDec": 12.0, #bosted 4x
+        },
+        "robot2": {
+            "maxLinVel": 2.2,  
+            "maxAngVel": 3.0,  
+            "linAcc": 3.0,
+            "linDec": 3.0,
+            "angAcc": 12.0,
+            "angDec": 12.0,
+
+            #leder often escapes fast robots radar
+        },
+        "laser_freq": 10,  # Highest sensor rate
+    },
+
+        {
+        "name": "aggressive_pursuit,better lasers",
+        "robot1": {
+            "maxLinVel": 1.1,  #0.5,
+            "maxAngVel": 3.0, #same
+            "linAcc": 1.5,  #bosted
+            "linDec": 3.0,   #same
+            "angAcc": 12.0, #bosted 4x
+            "angDec": 12.0, #bosted 4x
+        },
+        "robot2": {
+            "maxLinVel": 2.2,  
+            "maxAngVel": 3.0,  
+            "linAcc": 3.0,
+            "linDec": 3.0,
+            "angAcc": 20.0,
+            "angDec": 20.0,
+
+        },
+        "laser_freq": 100,  # Highest sensor rate
+    },
+
+       {
+        "name": "aggressive_pursuit,better lasers",
+        "robot1": {
+            "maxLinVel": 1.1,  #0.5,
+            "maxAngVel": 3.0, #same
+            "linAcc": 1.5,  #bosted
+            "linDec": 3.0,   #same
+            "angAcc": 6.0,   #same ,bosted 2x
+            "angDec": 6.0,  #same ,bosted 2x
+        },
+        "robot2": {
+            "maxLinVel": 2.2,  
+            "maxAngVel": 3.0,  
+            "linAcc": 3.0,
+            "linDec": 3.0,
+            "angAcc": 6.0,
+            "angDec": 6.0, 
+        },
+        "laser_freq": 100,  # Highest sensor rate
+    },
+]
+
+
+class PathRecorder:
+    def __init__(self, experiment_name, robot_name):
+        self.experiment_name = experiment_name
+        self.robot_name = robot_name
+        self.path_data = []
+        self.count = 0
+        
+        # Create directory for experiment data
+        self.data_dir = f"experiment_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        os.makedirs(self.data_dir, exist_ok=True)
+        
+    def record_position(self, seq, timestamp, x, y):
+        self.count += 1
+        self.path_data.append({
+            'seq': self.count,
+            'timestamp': timestamp,
+            'x': x,
+            'y': y
+        })
+        
+    def save_path(self):
+        filename = f"{self.data_dir}/{self.experiment_name}_{self.robot_name}_path.csv"
+        with open(filename, 'w', newline='') as f:
+            writer = csv.DictWriter(f, fieldnames=['seq', 'timestamp', 'x', 'y'])
+            writer.writeheader()
+            writer.writerows(self.path_data)
+
 
 def clamp(val, minVal, maxVal):
     return float(max(min(val, maxVal), minVal))
@@ -46,19 +207,18 @@ def laserToPoint(laser):
 
 class SerpController(Node):
     doStop = False
-    doOdometry = False
+    doOdometry = True
 
-    maxLinVel = 1.05
-    maxAngVel = 2.5
-    linAcc = 1.5
-    linDec = 3.0
-    angAcc = 4.0
-    angDec = 4.0
 
     minDistFromWall = 1.0
     k = 3
 
-    def __init__(self) -> None:
+    target_position = [-5, -4.5]
+    position_tolerance = 1 # Adjust as needed for precision
+    experiment_complete = False  # Flag to indicate if target is reached
+    
+
+    def __init__(self, experiment_config) -> None:
         super().__init__("SerpController")
 
         # self.doOdometry = self.get_parameter("~do-odometry")
@@ -70,21 +230,51 @@ class SerpController(Node):
         # self.angAcc = self.get_parameter("~angAcc")
         # self.angDec = self.get_parameter("~angDec")
 
+
+        
+
+                # Apply experiment configuration
+        self.maxLinVel = experiment_config["robot1"]["maxLinVel"]
+        self.maxAngVel = experiment_config["robot1"]["maxAngVel"]
+        self.linAcc = experiment_config["robot1"]["linAcc"]
+        self.linDec = experiment_config["robot1"]["linDec"]
+        self.angAcc = experiment_config["robot1"]["angAcc"]
+        self.angDec = experiment_config["robot1"]["angDec"]
+        self.count = 50
+        
+        # Initialize path recorder
+        self.path_recorder = PathRecorder(experiment_config["name"], "robot1")
+        
+
         self.vel = Twist()
 
         self.pub:Publisher = self.create_publisher(Twist, "/cmd_vel", 1)
         if SerpController.doOdometry:
             print('"seq","sec","x","y"')
             self.create_subscription(
-                Odometry, "/odometry/ground_truth", self._odometryGroundTruth, 1
+                Odometry, "odom", self._odometryGroundTruth, 1
             )
             
         self.create_subscription(LaserScan, "/static_laser", self._scanCallback, 1)
 
+
+
     def _odometryGroundTruth(self, odometry):
-        print(
-            f"{odometry.header.seq},{odometry.header.stamp.secs + odometry.header.stamp.nsecs / 1000000000},{odometry.pose.pose.position.x},{odometry.pose.pose.position.y}"
-        )
+        timestamp = odometry.header.stamp.sec + odometry.header.stamp.nanosec / 1e9
+        x = odometry.pose.pose.position.x
+        y = odometry.pose.pose.position.y
+        if self.count > 0:
+            self.count -=1
+
+        # Record position
+        self.path_recorder.record_position(None, timestamp, x, y)
+
+        # Check if robot has reached target position within tolerance
+        if not SerpController.experiment_complete and self.count == 0:
+            if abs(x - SerpController.target_position[0]) <= SerpController.position_tolerance and \
+               abs(y - SerpController.target_position[1]) <= SerpController.position_tolerance:
+                SerpController.experiment_complete = True
+                self.get_logger().info("Target position reached. Ending experiment.")
 
     def _scanCallback(self, scan):
         lasers = [0] * len(scan.ranges)
@@ -233,7 +423,7 @@ class SerpController(Node):
                 dirs["front_right"]["dist"],
                 dirs["front_left"]["dist"],
             )
-        self.linVel = SerpController.maxLinVel * front / LASER_RANGE
+        self.linVel = self.maxLinVel * front / LASER_RANGE
 
         if minDir == "front":
             if dirs["left"]["dist"] == inf and dirs["right"]["dist"] != inf:
@@ -268,23 +458,23 @@ class SerpController(Node):
 
     @linVel.setter
     def linVel(self, newLinVel):
-        desiredVel = clamp(newLinVel, -SerpController.maxLinVel, SerpController.maxLinVel)
+        desiredVel = clamp(newLinVel, -self.maxLinVel, self.maxLinVel)
 
         # v = v0 + a * t
         # desiredVel = self.linVel + a * (1/LASER_FREQ)
         a = (desiredVel - self.linVel) * LASER_FREQ
         if a > 0:
-            if a <= SerpController.linAcc:
+            if a <= self.linAcc:
                 self.vel.linear.x = desiredVel
             else:
                 # exceeded max acceleration
-                self.vel.linear.x = self.linVel + SerpController.linAcc / LASER_FREQ
+                self.vel.linear.x = self.linVel + self.linAcc / LASER_FREQ
         elif a < 0:
-            if a >= SerpController.linDec:
+            if a >= self.linDec:
                 self.vel.linear.x = desiredVel
             else:
                 # exceeded max decelaration
-                self.vel.linear.x = self.linVel - SerpController.linDec / LASER_FREQ
+                self.vel.linear.x = self.linVel - self.linDec / LASER_FREQ
 
     @property
     def angVel(self):
@@ -292,32 +482,33 @@ class SerpController(Node):
 
     @angVel.setter
     def angVel(self, newAngVel):
-        desiredVel = clamp(newAngVel, -SerpController.maxAngVel, SerpController.maxAngVel)
+        desiredVel = clamp(newAngVel, -self.maxAngVel, self.maxAngVel)
+        
 
         a = (desiredVel - self.angVel) * LASER_FREQ
         if a > 0:
-            if a <= SerpController.angAcc:
+            if a <= self.angAcc:
                 self.vel.angular.z = desiredVel
             else:
                 # exceeded max acceleration
-                self.vel.angular.z = self.angVel + SerpController.angAcc / LASER_FREQ
+                self.vel.angular.z = self.angVel + self.angAcc / LASER_FREQ
         elif a < 0:
-            if a >= SerpController.angDec:
+            if a >= self.angDec:
                 self.vel.angular.z = desiredVel
             else:
                 # exceeded max decelaration
-                self.vel.angular.z = self.angVel - SerpController.angDec / LASER_FREQ
+                self.vel.angular.z = self.angVel - self.angDec / LASER_FREQ
 
     def wiggle(self):
         #  rospy.loginfo("wiggling")
         self.linVel = self.maxLinVel
-        v = SerpController.maxAngVel * random()
+        v = self.maxAngVel * random()
         if random() > 0.5:
             self.angVel += v
         else:
             self.angVel -= v
         # reset wandering angle when limit reached
-        if abs(self.angVel) >= SerpController.maxAngVel:
+        if abs(self.angVel) >= self.maxAngVel:
             self.angVel = 0
 
         self.moveTurtle()
@@ -340,14 +531,7 @@ class SerpController(Node):
 
 class SerpController2(Node):
     doStop = False
-    doOdometry = False
-
-    maxLinVel = 2.2
-    maxAngVel = 1.8
-    linAcc = 1.2
-    linDec = 3.0
-    angAcc = 4.0
-    angDec = 4.0
+    doOdometry = True
 
     minDistFromWall = 1.0
     k = 3
@@ -358,30 +542,56 @@ class SerpController2(Node):
     min_safe_distance = 0.8  # Minimum safe distance to maintain from leader
     optimal_follow_distance = 1.2 
 
-    def __init__(self) -> None:
+
+    def __init__(self, experiment_config) -> None:
         super().__init__("SerpController2")
+
+
+                # Apply experiment configuration
+        self.maxLinVel = experiment_config["robot2"]["maxLinVel"]
+        self.maxAngVel = experiment_config["robot2"]["maxAngVel"]
+        self.linAcc = experiment_config["robot2"]["linAcc"]
+        self.linDec = experiment_config["robot2"]["linDec"]
+        self.angAcc = experiment_config["robot2"]["angAcc"]
+        self.angDec = experiment_config["robot2"]["angDec"]
+        
+        # Initialize path recorder
+        self.path_recorder = PathRecorder(experiment_config["name"], "robot2")
+        
+
         self.robot_detected = False
+        self.metting = False
         self.vel = Twist()
         self.pub: Publisher = self.create_publisher(Twist, "/robot2/cmd_vel", 1)
 
         if SerpController2.doOdometry:
             print('"seq","sec","x","y"')
             self.create_subscription(
-                Odometry, "/robot2/odometry/ground_truth", self._odometryGroundTruth, 1
+                Odometry, "robot2/odom", self._odometryGroundTruth, 1
             )
 
         self.create_subscription(LaserScan, "/robot2/static_laser", self._scanCallback, 1)
         self.create_subscription(LaserScan, "/robot2/robot_scan", self._robotScanCallback, 1)
 
+
     def _odometryGroundTruth(self, odometry):
-        print(
-            f"{odometry.header.seq},{odometry.header.stamp.secs + odometry.header.stamp.nsecs / 1000000000},{odometry.pose.pose.position.x},{odometry.pose.pose.position.y}"
+        timestamp = odometry.header.stamp.sec + odometry.header.stamp.nanosec / 1e9
+        
+        if self.metting ==  False and self.robot_detected ==True:
+            self.metting = True
+            self.get_logger().info("!!!METTING!!! : " + str(timestamp)) 
+
+        self.path_recorder.record_position(
+            None,  # No sequence number available
+            timestamp,
+            odometry.pose.pose.position.x,
+            odometry.pose.pose.position.y
         )
 
     def _scanCallback(self, scan):
         # Wall-following only if robot is not detected
         if not self.robot_detected:
-            self.get_logger().info("Executing wall-following behavior")
+            #self.get_logger().info("Executing wall-following behavior")
             lasers = [0] * len(scan.ranges)
             angle = scan.angle_min
             for i in range(len(scan.ranges)):
@@ -418,9 +628,9 @@ class SerpController2(Node):
                 self.robot_detected = False
                 self.get_logger().info("Leader lost, switching to wall mode")
                 # Reset to wall-following parameters
-                self.maxLinVel = 1.1
+                #self.maxLinVel = 1.1
                 self.linAcc = 0.2
-                self.follow_distance_threshold = 2.5
+                #self.follow_distance_threshold = 2.5
                 
 
     def follow_robot(self, distance, angle):
@@ -581,7 +791,7 @@ class SerpController2(Node):
         else:
             front = min(dirs["front"]["dist"], dirs["front_right"]["dist"], dirs["front_left"]["dist"])
 
-        self.linVel = SerpController2.maxLinVel * front / LASER_RANGE
+        self.linVel = self.maxLinVel * front / LASER_RANGE
 
         wallSide = "left" if minDir.endswith("left") else "right"
         angDistTerm = (
@@ -599,23 +809,23 @@ class SerpController2(Node):
 
     @linVel.setter
     def linVel(self, newLinVel):
-        desiredVel = clamp(newLinVel, -SerpController2.maxLinVel, SerpController2.maxLinVel)
+        desiredVel = clamp(newLinVel, -self.maxLinVel, self.maxLinVel)
 
         # v = v0 + a * t
         # desiredVel = self.linVel + a * (1/LASER_FREQ)
         a = (desiredVel - self.linVel) * LASER_FREQ
         if a > 0:
-            if a <= SerpController2.linAcc:
+            if a <= self.linAcc:
                 self.vel.linear.x = desiredVel
             else:
                 # exceeded max acceleration
-                self.vel.linear.x = self.linVel + SerpController2.linAcc / LASER_FREQ
+                self.vel.linear.x = self.linVel + self.linAcc / LASER_FREQ
         elif a < 0:
-            if a >= SerpController2.linDec:
+            if a >= self.linDec:
                 self.vel.linear.x = desiredVel
             else:
                 # exceeded max decelaration
-                self.vel.linear.x = self.linVel - SerpController2.linDec / LASER_FREQ
+                self.vel.linear.x = self.linVel - self.linDec / LASER_FREQ
 
     @property
     def angVel(self):
@@ -623,33 +833,33 @@ class SerpController2(Node):
 
     @angVel.setter
     def angVel(self, newAngVel):
-        desiredVel = clamp(newAngVel, -SerpController2.maxAngVel, SerpController2.maxAngVel)
+        desiredVel = clamp(newAngVel, -self.maxAngVel, self.maxAngVel)
 
         a = (desiredVel - self.angVel) * LASER_FREQ
         if a > 0:
-            if a <= SerpController2.angAcc:
+            if a <= self.angAcc:
                 self.vel.angular.z = desiredVel
             else:
                 # exceeded max acceleration
-                self.vel.angular.z = self.angVel + SerpController2.angAcc / LASER_FREQ
+                self.vel.angular.z = self.angVel + self.angAcc / LASER_FREQ
         elif a < 0:
-            if a >= SerpController2.angDec:
+            if a >= self.angDec:
                 self.vel.angular.z = desiredVel
             else:
                 # exceeded max decelaration
-                self.vel.angular.z = self.angVel - SerpController2.angDec / LASER_FREQ
+                self.vel.angular.z = self.angVel - self.angDec / LASER_FREQ
 
 
     def wiggle(self):
         #  rospy.loginfo("wiggling")
         self.linVel = self.maxLinVel
-        v = SerpController2.maxAngVel * random()
+        v = self.maxAngVel * random()
         if random() > 0.5:
             self.angVel += v
         else:
             self.angVel -= v
         # reset wandering angle when limit reached
-        if abs(self.angVel) >= SerpController2.maxAngVel:
+        if abs(self.angVel) >= self.maxAngVel:
             self.angVel = 0
         self.get_logger().info(f"Wiggling: linVel={self.linVel}, angVel={self.angVel}")
       
@@ -657,7 +867,7 @@ class SerpController2(Node):
 
     def moveTurtle(self):
         # Publish current velocity
-        self.get_logger().info(f"Moving: linear={self.vel.linear.x}, angular={self.vel.angular.z}")
+        #self.get_logger().info(f"Moving: linear={self.vel.linear.x}, angular={self.vel.angular.z}")
         self.pub.publish(self.vel)
 
     def reset(self):
@@ -672,7 +882,36 @@ class SerpController2(Node):
         request.name = "SerpController2"
         request.pose = Pose2D(uniform(-6, 6), uniform(-5, 7), uniform(0, 359))
         client.call(request)
+
+
+
+def run_experiment(experiment_config):
+    rclpy.init()
+
+    serp = SerpController(experiment_config)
+    serp2 = SerpController2(experiment_config)
+
+    executor = MultiThreadedExecutor()
+    executor.add_node(serp)
+    executor.add_node(serp2)
+
+    try:
+        while not SerpController.experiment_complete:
+            executor.spin_once(timeout_sec=1.0)
+    finally:
+        # Save data and clean up when the experiment is complete
+        serp.path_recorder.save_path()
+        serp2.path_recorder.save_path()
+        print(f"Experiment '{experiment_config['name']}' completed. Path data saved.")
         
+        executor.shutdown()
+        serp.destroy_node()
+        serp2.destroy_node()
+        rclpy.shutdown()
+
+
+
+
 def main(args = None):
     # rclpy.init()
     
@@ -681,25 +920,35 @@ def main(args = None):
 
     # rclpy.spin(serp)
     # rclpy.spin(serp2)
-    
-    rclpy.init(args=args)
-    
-    serp = SerpController()
-    serp2 = SerpController2()
+    experimentB = True
 
-    # Use a MultiThreadedExecutor to manage multiple nodes
-    executor = MultiThreadedExecutor()
-    executor.add_node(serp)
-    executor.add_node(serp2)
+    
+    
+    experiment = EXPERIMENTS[5]
+    print(f"Starting experiment: {experiment['name']}")
+    run_experiment(experiment)
+    print(f"Experiment {experiment['name']} completed")
 
-    try:
-        executor.spin()
-    finally:
-        # Cleanup
-        executor.shutdown()
-        serp.destroy_node()
-        serp2.destroy_node()
-        rclpy.shutdown()
+    """
+    else: 
+        rclpy.init(args=args)
+        
+        serp = SerpController()
+        serp2 = SerpController2()
+
+        # Use a MultiThreadedExecutor to manage multiple nodes
+        executor = MultiThreadedExecutor()
+        executor.add_node(serp)
+        executor.add_node(serp2)
+        try:
+            executor.spin()
+        finally:
+            # Cleanup
+            executor.shutdown()
+            serp.destroy_node()
+            serp2.destroy_node()
+            rclpy.shutdown()
+            """
 
 if __name__ == "__main__":
     main()
