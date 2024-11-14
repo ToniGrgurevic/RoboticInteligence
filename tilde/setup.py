@@ -21,7 +21,7 @@ setup(
     zip_safe=True,
     maintainer='chris',
     maintainer_email='christopher.schneider@gmx.net',
-    description='TODO: Package description',
+    description='Ros2 simulation of 2 robots following a wall and robot in front',
     license='TODO: License declaration',
     tests_require=['pytest'],
     # Declare the enry point for your python scripts

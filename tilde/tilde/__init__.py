@@ -40,32 +40,31 @@ EXPERIMENTS = [
     {
         "name": "baseline",
         "robot1": {
-            "maxLinVel": 1.1,  #0.5
-            "maxAngVel": 3.0, #same
+            "maxLinVel": 1.1,
+            "maxAngVel": 3.0,
             "linAcc": 1.2,
-            "linDec": 3.0,   #same
-            "angAcc": 3.0,   #same
-            "angDec": 3.0,  #same
+            "linDec": 3.0,
+            "angAcc": 3.0,
+            "angDec": 3.0,
         },
         "robot2": {
             "maxLinVel": 2.2,  
-            "maxAngVel": 3.0,  #
+            "maxAngVel": 3.0,
             "linAcc": 1.5,
             "linDec": 3.0,
             "angAcc": 3.0,
-            "angDec": 3.0, #
+            "angDec": 3.0,
         },
-        "laser_freq": 10,
     },
     {
         "name": "faster in corners",
         "robot1": {
-            "maxLinVel": 1.1,  #0.5
-            "maxAngVel": 3.0, #same
+            "maxLinVel": 1.1,
+            "maxAngVel": 3.0,
             "linAcc": 1.2,
-            "linDec": 3.0,   #same
-            "angAcc": 6.0,   #same ,bosted 2x
-            "angDec": 6.0,  #same ,bosted 2x
+            "linDec": 3.0,
+            "angAcc": 6.0,
+            "angDec": 6.0,
         },
         "robot2": {
             "maxLinVel": 2.2,  
@@ -75,17 +74,16 @@ EXPERIMENTS = [
             "angAcc": 6.0,
             "angDec": 6.0, 
         },
-        "laser_freq": 10,
     },
     {
         "name": "faster in corners and in general",
         "robot1": {
-            "maxLinVel": 1.1,  #0.5,
-            "maxAngVel": 3.0, #same
-            "linAcc": 1.5,  #bosted
-            "linDec": 3.0,   #same
-            "angAcc": 6.0,   #same ,bosted 2x
-            "angDec": 6.0,  #same ,bosted 2x
+            "maxLinVel": 1.1,
+            "maxAngVel": 3.0,
+            "linAcc": 1.5,
+            "linDec": 3.0,
+            "angAcc": 6.0,
+            "angDec": 6.0,
         },
         "robot2": {
             "maxLinVel": 2.2,  
@@ -95,17 +93,16 @@ EXPERIMENTS = [
             "angAcc": 6.0,
             "angDec": 6.0, 
         },
-        "laser_freq": 10,
     },
     {
         "name": "aggressive_pursuit",
         "robot1": {
-            "maxLinVel": 1.1,  #0.5,
-            "maxAngVel": 3.0, #same
-            "linAcc": 1.5,  #bosted
-            "linDec": 3.0,   #same
-            "angAcc": 12.0, #bosted 4x
-            "angDec": 12.0, #bosted 4x
+            "maxLinVel": 1.1,
+            "maxAngVel": 3.0,
+            "linAcc": 1.5,
+            "linDec": 3.0,
+            "angAcc": 12.0,
+            "angDec": 12.0,
         },
         "robot2": {
             "maxLinVel": 2.2,  
@@ -123,12 +120,12 @@ EXPERIMENTS = [
         {
         "name": "aggressive_pursuit,better lasers",
         "robot1": {
-            "maxLinVel": 1.1,  #0.5,
-            "maxAngVel": 3.0, #same
-            "linAcc": 1.5,  #bosted
-            "linDec": 3.0,   #same
-            "angAcc": 12.0, #bosted 4x
-            "angDec": 12.0, #bosted 4x
+            "maxLinVel": 1.1,
+            "maxAngVel": 3.0,
+            "linAcc": 1.5,
+            "linDec": 3.0,
+            "angAcc": 12.0,
+            "angDec": 12.0,
         },
         "robot2": {
             "maxLinVel": 2.2,  
@@ -138,27 +135,6 @@ EXPERIMENTS = [
             "angAcc": 20.0,
             "angDec": 20.0,
 
-        },
-        "laser_freq": 100,  # Highest sensor rate
-    },
-
-       {
-        "name": "aggressive_pursuit,better lasers",
-        "robot1": {
-            "maxLinVel": 1.1,  #0.5,
-            "maxAngVel": 3.0, #same
-            "linAcc": 1.5,  #bosted
-            "linDec": 3.0,   #same
-            "angAcc": 6.0,   #same ,bosted 2x
-            "angDec": 6.0,  #same ,bosted 2x
-        },
-        "robot2": {
-            "maxLinVel": 2.2,  
-            "maxAngVel": 3.0,  
-            "linAcc": 3.0,
-            "linDec": 3.0,
-            "angAcc": 6.0,
-            "angDec": 6.0, 
         },
         "laser_freq": 100,  # Highest sensor rate
     },
@@ -172,7 +148,6 @@ class PathRecorder:
         self.path_data = []
         self.count = 0
         
-        # Create directory for experiment data
         self.data_dir = f"experiment_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         os.makedirs(self.data_dir, exist_ok=True)
         
@@ -214,23 +189,12 @@ class SerpController(Node):
     k = 3
 
     target_position = [-5, -4.5]
-    position_tolerance = 1 # Adjust as needed for precision
-    experiment_complete = False  # Flag to indicate if target is reached
+    position_tolerance = 1
+    experiment_complete = False
     
 
     def __init__(self, experiment_config) -> None:
         super().__init__("SerpController")
-
-        # self.doOdometry = self.get_parameter("~do-odometry")
-        # self.doStop = self.get_parameter("~do-stop")
-        # self.maxLinVel = self.get_parameter("~max-linVel")
-        # self.maxAngVel = self.get_parameter("~max-angVel")
-        # self.linAcc = self.get_parameter("~linAcc")
-        # self.linDec = self.get_parameter("~linDec")
-        # self.angAcc = self.get_parameter("~angAcc")
-        # self.angDec = self.get_parameter("~angDec")
-
-
         
 
                 # Apply experiment configuration
@@ -242,7 +206,6 @@ class SerpController(Node):
         self.angDec = experiment_config["robot1"]["angDec"]
         self.count = 50
         
-        # Initialize path recorder
         self.path_recorder = PathRecorder(experiment_config["name"], "robot1")
         
 
@@ -266,10 +229,8 @@ class SerpController(Node):
         if self.count > 0:
             self.count -=1
 
-        # Record position
         self.path_recorder.record_position(None, timestamp, x, y)
 
-        # Check if robot has reached target position within tolerance
         if not SerpController.experiment_complete and self.count == 0:
             if abs(x - SerpController.target_position[0]) <= SerpController.position_tolerance and \
                abs(y - SerpController.target_position[1]) <= SerpController.position_tolerance:
