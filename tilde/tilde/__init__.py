@@ -885,7 +885,7 @@ def main(args = None):
 
     
     
-    experiment = EXPERIMENTS[5]
+    experiment = EXPERIMENTS[4]
     print(f"Starting experiment: {experiment['name']}")
     run_experiment(experiment)
     print(f"Experiment {experiment['name']} completed")
