@@ -48,10 +48,11 @@
 
 1. `git clone https://github.com/ToniGrgurevic/ri.git` into your
    workspace's `src` directory
-2. Install the required dependencies using
+2. go back to your workspace  `cd ..` 
+3. Install the required dependencies using
    `rosdep install -i --from-path src --rosdistro humble -y`
-3. `colcon build`
-4. `source install/setup.bash`
-5. `ros2 launch tilde tilde.launch.py`
+4. `colcon build`
+5. `source install/setup.bash`
+6. `ros2 launch tilde tilde.launch.py`
 
 
